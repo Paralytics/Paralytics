@@ -10,12 +10,11 @@ from .exceptions import *
 
 
 class TargetEncoder(BaseEstimator, TransformerMixin):
-    """Encodes categorical features with the corresponding target aggregated
-     value.
+    """Encodes categorical features with the corresponding target value.
 
-     If cv param is specified, performs determination of mean values on the way
-     of cross validation within inner cross validation. As a result for each of
-     the outside folds received target aggregated values will be less biased.
+    If cv param is specified, performs determination of mean values on the way
+    of cross validation within inner cross validation. As a result for each of
+    the outside folds received target aggregated values will be less biased.
 
     Parameters
     ----------
@@ -114,9 +113,10 @@ class TargetEncoder(BaseEstimator, TransformerMixin):
     def transform(self, X, y=None):
         """Applies target encoding on X.
 
-        X is target encoded with the aggregated values kept in the cat_aggval_
-        and for the training data encoding is made with additional spread
-        obtained in the cross-validation within cross-validation.
+        X is target encoded with the aggregated values kept in the
+        `cat_aggval_` and for the training data encoding is made with
+        additional spread obtained in the cross-validation within
+        cross-validation.
 
         Parameters
         ----------
@@ -137,7 +137,7 @@ class TargetEncoder(BaseEstimator, TransformerMixin):
             getattr(self, 'cat_aggval_')
         except AttributeError:
             raise RuntimeError(
-                'Could not find the attribute.\nFitting is necessary before'
+                'Could not find the attribute.\nFitting is necessary before '
                 'you do the transformation!'
             )
         assert isinstance(X, pd.DataFrame), \

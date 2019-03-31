@@ -6,10 +6,10 @@ with open('requirements.txt') as f:
 
 setup(
     name='paralytics',
-    version='0.1',
+    version='0.2',
     author='Mateusz Zakrzewski',
     description='Python Analytical Scripts.',
-    long_description=open('README.md').read(),
+    long_description=open('README.rst').read(),
     url='https://github.com/mrtovsky/Paralytics',
     install_requires=requirements,
     license='MIT',

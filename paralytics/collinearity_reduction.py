@@ -1,5 +1,5 @@
 import numpy as np
-import pandas as pd 
+import pandas as pd
 
 from inspect import currentframe, getargvalues
 from pandas.api.types import is_numeric_dtype
@@ -10,9 +10,9 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 class VIFSelector(BaseEstimator, TransformerMixin):
     """Makes feature selection based on Variance Inflation Factor.
-    
-    Calculates Variance Inflation Factor for a given dataset, in each iteration 
-    discarding the variable with the highest VIF value and repeats this 
+
+    Calculates Variance Inflation Factor for a given dataset, in each iteration
+    discarding the variable with the highest VIF value and repeats this
     process until it is not below the declared threshold.
 
     Based on:
@@ -21,28 +21,36 @@ class VIFSelector(BaseEstimator, TransformerMixin):
     Parameters
     ----------
     thresh: float (default: 5.0)
-        Threshold value after which further rejection of variables is 
+        Threshold value after which further rejection of variables is
         discontinued.
 
     impute: boolean (default: True)
         Declares whether missing values imputation should be performed.
 
     impute_strat: string {'mean', 'median', 'most_frequent'} (default: 'mean')
-        Declares imputation strategy for the scikit-learn SimpleImputer 
+        Declares imputation strategy for the scikit-learn SimpleImputer
         transformation.
+
+    verbose: int, default = 0
+        Controls verbosity of output. If 0 there is no output, if 1 displays
+        which features were removed.
 
     Attributes
     ---------
     imputer_: estimator
         The estimator by means of which missing values imputation is performed.
-    
-    viffed_cols_: list, length = n_features
+
+    viffed_cols_: list
         List of features from a given dataset that exceeded thresh.
+
+    kept_cols_: list
+        List of features that left after the vif procedure.
 
     """
 
-    def __init__(self, thresh=5.0, impute=True, impute_strat='mean'):
-        icf = currentframe()    
+    def __init__(self, thresh=5.0, impute=True,
+                 impute_strat='mean', verbose=0):
+        icf = currentframe()
         args, _, _, values = getargvalues(icf)
         values.pop('self')
 
@@ -61,7 +69,7 @@ class VIFSelector(BaseEstimator, TransformerMixin):
         ----------
         X: DataFrame, shape (n_samples, n_features)
             Input data, where n_samples is the number of samples and n_features
-            is the number of features.
+            is the number of features.l
 
         Returns
         -------
@@ -72,15 +80,17 @@ class VIFSelector(BaseEstimator, TransformerMixin):
         if hasattr(self, 'imputer_'):
             self.imputer_.fit(X)
 
-        self.viffed_cols_ = self._viffing(X, self.thresh)
-        
+        self.viffed_cols_, self.kept_cols_ = self._viffing(
+            X, self.thresh, self.verbose
+        )
+
         return self
 
     def transform(self, X):
         """Apply feature selection based on Variance Inflation Factor.
 
         Until the maximum VIF in the given dataset does not exceed the declared
-        threshold, in every iteration independent variables' VIF values are 
+        threshold, in every iteration independent variables' VIF values are
         calculated and the variable with the highest VIF value is removed.
 
         Parameters
@@ -96,24 +106,24 @@ class VIFSelector(BaseEstimator, TransformerMixin):
         """
         try:
             getattr(self, 'viffed_cols_')
+            getattr(self, 'kept_cols_')
         except AttributeError:
             raise RuntimeError('Could not find the attribute.\n'
                                'Fitting is necessary before you do '
                                'the transformation.')
+        X_new = X.copy()
 
-        cols = X.columns.tolist()
         if hasattr(self, 'imputer_'):
-            X = pd.DataFrame(self.imputer_.transform(X), columns=cols)
-        
-        X_new = X.drop(self.viffed_cols_, axis=1)
-        
+            cols = X_new.columns.tolist()
+            X_new = pd.DataFrame(self.imputer_.transform(X_new), columns=cols)
+
+        X_new = X_new.drop(self.viffed_cols_, axis=1)
+
         return X_new
 
     @staticmethod
-    def _viffing(X, thresh):
-        """In every iteration removes variable with the highest VIF value.  
-
-        """
+    def _viffing(X, thresh, verbose):
+        """In every iteration removes variable with the highest VIF value."""
         assert isinstance(X, pd.DataFrame), \
             'Input must be an instance of pandas.DataFrame()'
         assert ~(X.isnull().values).any(), (
@@ -122,7 +132,7 @@ class VIFSelector(BaseEstimator, TransformerMixin):
         )
         assert all(is_numeric_dtype(X[col]) for col in X.columns), \
             'Only numeric dtypes are acceptable.'
-        
+
         X_new = X.copy()
         viffed_cols = []
 
@@ -133,19 +143,29 @@ class VIFSelector(BaseEstimator, TransformerMixin):
                 print("Last variable survived, I'm stopping it right now!")
                 break
 
-            vifs = [variance_inflation_factor(X_new.values,
-                X_new.columns.get_loc(var)) for var in X_new.columns]
-            
+            vifs = [
+                variance_inflation_factor(
+                    X_new.values,
+                    X_new.columns.get_loc(var)
+                ) for var in X_new.columns
+            ]
+
             max_vif = max(vifs)
             if max_vif > thresh:
                 max_loc = vifs.index(max_vif)
                 col_out = X_new.columns[max_loc]
-                print(f'{col_out} with vif={max_vif} is exceeds thresh')
+                if verbose:
+                    print(
+                        '{0} with vif={1:.2f} exceeds the threshold.'
+                        .format(col_out, max_vif)
+                    )
                 X_new.drop([col_out], axis=1, inplace=True)
                 viffed_cols.append(col_out)
-                keep_digging=True
-        
-        return viffed_cols
+                keep_digging = True
+
+        kept_cols = X_new.columns.tolist()
+
+        return viffed_cols, kept_cols
 
 
 class CorrelationReducer(BaseEstimator, TransformerMixin):
@@ -153,18 +173,16 @@ class CorrelationReducer(BaseEstimator, TransformerMixin):
 
     Parameters
     ----------
-    method: string {'pearson', 'kendall', 'spearman'} (default: 'pearson')
+    method: string, optional (default='pearson')
         Compute pairwise correlation of columns, excluding NA/null values
-        (basing on pandas.DataFrame.corr).
-            pearson: 
-                standard correlation coefficient.
-            kendall:
-                Kendall Tau correlation coefficient.
-            spearman:
-                Spearman rank correlation.
+        (based on pandas.DataFrame.corr).
 
-    thresh: float (default: .8)
-        Threshold value after which further rejection of variables is 
+        - `pearson`: Standard correlation coefficient.
+        - `kendall`: Kendall Tau correlation coefficient.
+        - `spearman`: Spearman rank correlation.
+
+    thresh: float (default=.8)
+        Threshold value after which further rejection of variables is
         discontinued.
 
     Attributes
@@ -174,7 +192,7 @@ class CorrelationReducer(BaseEstimator, TransformerMixin):
 
     """
     def __init__(self, thresh=.8, method='pearson'):
-        icf = currentframe()    
+        icf = currentframe()
         args, _, _, values = getargvalues(icf)
         values.pop('self')
 
@@ -200,9 +218,9 @@ class CorrelationReducer(BaseEstimator, TransformerMixin):
             'Input must be an instance of pandas.DataFrame()'
 
         self.correlated_cols_ = self._reduce_corr(X, self.thresh, self.method)
-        
+
         return self
-  
+
     def transform(self, X):
         """Apply feature selection based on correlation coefficients.
 
@@ -226,9 +244,9 @@ class CorrelationReducer(BaseEstimator, TransformerMixin):
             raise RuntimeError('Could not find the attribute.\n'
                                'Fitting is necessary before you do '
                                'the transformation.')
-        
+
         X_new = X.drop(self.correlated_cols_, axis=1)
-        
+
         return X_new
 
     @staticmethod

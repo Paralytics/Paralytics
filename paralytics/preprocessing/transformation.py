@@ -23,6 +23,7 @@ class CategoricalBinarizer(BaseEstimator, TransformerMixin):
     ----------
     columns_binarylike_: list
         List of column names that should be mapped to boolean.
+
     """
     def __init__(self, keywords_true=None, keywords_false=None):
         self.keywords_true = keywords_true
@@ -33,7 +34,7 @@ class CategoricalBinarizer(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X: DataFrame, shape (n_samples, n_features)
+        X: pd.DataFrame, shape = (n_samples, n_features)
             Data with n_samples as its number of samples and n_features as its
             number of features.
 
@@ -74,15 +75,15 @@ class CategoricalBinarizer(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X: DataFrame, shape (n_samples, n_features)
+        X: pd.DataFrame, shape = (n_samples, n_features)
             Data with n_samples as its number of samples and n_features as its
             number of features.
 
         Returns
         -------
-        X_new: DataFrame, shape (n_samples, n_features)
+        X_new: pd.DataFrame, shape = (n_samples, n_features)
             X data with substituted binary-like category columns with its
-                corresponding binary values.
+            corresponding binary values.
         """
         try:
             getattr(self, 'columns_binarylike_')
@@ -112,25 +113,28 @@ class CategoricalGrouper(BaseEstimator, TransformerMixin):
 
     Parameters
     ----------
-    method: string {'freq'} (default: 'freq')
-        freq:
-            Counts the frequency against each category. Retains categories
-            whose cumulative share (with respect to descending sort) in the
-            total dataset is equal or higher than the percentile threshold.
+    method: string {'freq'}, optional (default='freq')
+        The sparse categories grouping method:
 
-    percentile_thresh: float (default: .05)
+        - `freq`:
+
+          Counts the frequency against each category. Retains categories
+          whose cumulative share (with respect to descending sort) in the
+          total dataset is equal or higher than the percentile threshold.
+
+    percentile_thresh: float, optional (default=.05)
         Defines the percentile threshold for 'freq' method.
 
-    new_cat: string or int (default: 'Other')
+    new_cat: string or int, optional (default='Other')
         Specifies the category name that will be imputed to the chosen sparse
         observations.
 
-    include_cols: list or None (default: None)
+    include_cols: list, optional (default=None)
         Specifies column names that should be treated like categorical
         features. If None then estimator is executed only on the automatically
         selected categorical columns.
 
-    exclude_cols: list or None (default: None)
+    exclude_cols: list, optional (default=None)
         Specifies categorical column names that should not be treated like
         categorical features. If None then no column is excluded from
         transformation.
@@ -159,7 +163,7 @@ class CategoricalGrouper(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X: DataFrame, shape (n_samples, n_features)
+        X: pd.DataFrame, shape = (n_samples, n_features)
             Training data of independent variable values.
 
         y: ignore
@@ -199,12 +203,12 @@ class CategoricalGrouper(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X: DataFrame, shape (n_samples, n_features)
+        X: pd.DataFrame, shape = (n_samples, n_features)
             Data with n_samples as its number of samples.
 
         Returns
         -------
-        X_new: DataFrame, shape (n_samples_new, n_features)
+        X_new: pd.DataFrame, shape = (n_samples_new, n_features)
             X data with substituted sparse categories to new_cat.
 
         """
@@ -245,9 +249,7 @@ class CategoricalGrouper(BaseEstimator, TransformerMixin):
 
     @staticmethod
     def _cat_cols_selection(X, include, exclude):
-        """Returns categorical columns including the user's corrections.
-
-        """
+        """Returns categorical columns including the user's corrections."""
         cat_cols = X.select_dtypes('category').columns.tolist()
 
         if include is not None:
@@ -274,28 +276,66 @@ class ColumnProjector(BaseEstimator, TransformerMixin):
 
     Parameters
     ----------
-    manual_projection: dictionary
+    manual_projection: dictionary, optional (default=None)
         Dictionary where keys are dtype names onto which specified columns
         will be projected and values are lists containing names of variables to
-        be projected onto given dtype.
-            Example:
-                manual_projection={
-                    float: ['foo', 'bar'],
-                    'category': ['baz'],
-                    int: ['qux'],
-                    bool: ['quux']
-                }
+        be projected onto given dtype. Example usage:
 
-    num_to_float: boolean (default: True)
+        >>> manual_projection = {
+        >>>    float: ['foo', 'bar'],
+        >>>    'category': ['baz'],
+        >>>    int: ['qux'],
+        >>>    bool: ['quux']
+        >>> }
+
+    num_to_float: boolean, optional (default=True)
         Specifies whether numerical variables should be projected onto float
         (if True) or onto int (if False).
 
+    Attributes
+    ----------
+    automatic_projection_: dict
+        Dictionary where key is the dtype name onto which specified columns
+        will be projected chosen automatically (when manual_projection is
+        specified then this manunal assignment is decisive).
     """
     def __init__(self, manual_projection=None, num_to_float=True):
         self.manual_projection = manual_projection
         self.num_to_float = num_to_float
 
     def fit(self, X, y=None):
+        """Fits corresponding dtypes to X.
+
+        Parameters
+        ----------
+        X: pd.DataFrame, shape = (n_samples, n_features)
+            Training data of independent variable values.
+
+        y: ignore
+
+        Returns
+        -------
+        self: object
+            Returns the instance itself.
+
+        """
+        self.automatic_projection_ = {'category': [], bool: []}
+
+        if self.num_to_float:
+            self.automatic_projection_[float] = []
+        else:
+            self.automatic_projection_[int] = []
+
+        for col in X.columns:
+            if set(X[col]) <= {0, 1}:
+                self.automatic_projection_[bool].append(col)
+            elif self.num_to_float and is_numeric_dtype(X[col]):
+                self.automatic_projection_[float].append(col)
+            elif is_numeric_dtype(X[col]):
+                self.automatic_projection_[int].append(col)
+            else:
+                self.automatic_projection_['category'].append(col)
+
         return self
 
     def transform(self, X):
@@ -303,96 +343,182 @@ class ColumnProjector(BaseEstimator, TransformerMixin):
 
         Parameters
         ----------
-        X: DataFrame, shape (n_samples, n_features)
+        X: pd.DataFrame, shape = (n_samples, n_features)
             New data with n_samples as its number of samples.
 
         Returns
         -------
-        X_new: DataFrame, shape (n_samples, n_features)
+        X_new: pd.DataFrame, shape = (n_samples, n_features)
             X data with projected values onto specified dtype.
 
         """
+        try:
+            getattr(self, 'automatic_projection_')
+        except AttributeError:
+            raise RuntimeError(
+                'Could not find the attribute.\nFitting is necessary before '
+                'you do the transformation!'
+            )
         assert isinstance(X, pd.DataFrame), \
             'Input must be an instance of pandas.DataFrame()'
 
-        X_new = X.copy()
-        columns = X_new.columns
-        if self.manual_projection is not None:
-            assert isinstance(self.manual_projection, dict), \
-                'manual_projection must be an instance of the dictionary!'
-            for col_type, col_names in self.manual_projection.items():
-                assert isinstance(col_names, list), (
-                    'Values of manual_projection must be an instance '
-                    'of the list!'
-                )
-                try:
-                    X_new[col_names] = X_new[col_names].astype(col_type)
-                    columns = [col for col in columns
-                               if col not in col_names]
-                except KeyError:
-                    cols_error = list(set(col_names) - set(X_new.columns))
-                    raise KeyError("C'mon, those columns ain't in "
-                                   "the DataFrame: %s" % cols_error)
-
-        for col in columns:
-            if set(X_new[col]) <= {0, 1}:
-                X_new[col] = X_new[col].astype(bool)
-            elif self.num_to_float and is_numeric_dtype(X_new[col]):
-                X_new[col] = X_new[col].astype(float)
-            elif is_numeric_dtype(X_new[col]):
-                X_new[col] = X_new[col].astype(int)
-            else:
-                X_new[col] = X_new[col].astype('category')
+        X_new, columns_projected = self._project(X, self.manual_projection)
+        X_new, _ = self._project(
+            X_new, self.automatic_projection_, skip_columns=columns_projected
+        )
 
         return X_new
 
+    @staticmethod
+    def _project(X, projection_dict, skip_columns=None):
+        """Projects X in accordance with the guidelines provided."""
+        X_new = X.copy()
+        columns_projected = []
+
+        if skip_columns is None:
+            skip_columns = []
+
+        if projection_dict is not None:
+            assert isinstance(projection_dict, dict), \
+                'projection_dict must be an instance of the dictionary!'
+            for col_type, col_names in projection_dict.items():
+                assert isinstance(col_names, list), (
+                    'Values of projection_dict must be an instance '
+                    'of the list!'
+                )
+                cols_to_project = [
+                    col for col in col_names if col not in skip_columns
+                ]
+                try:
+                    X_new[cols_to_project] = (
+                        X_new[cols_to_project].astype(col_type)
+                    )
+                except KeyError:
+                    cols_error = list(
+                        set(cols_to_project) - set(X_new.columns)
+                    )
+                    raise KeyError("C'mon, those columns ain't in "
+                                   "the DataFrame: %s" % cols_error)
+                columns_projected.extend(cols_to_project)
+
+        return X_new, columns_projected
+
 
 class ColumnSelector(BaseEstimator, TransformerMixin):
-    """
-    Taken from:
-    https://ramhiser.com/post/2018-04-16-building-scikit-learn-pipeline-
-    with-pandas-dataframe/
+    """Limits the X to selected columns.
+
+    Parameters
+    ----------
+    columns: list
+        List of column names selected to be left.
+
+    References
+    ----------
+    [1] J. Ramey, `Building Scikit-Learn Pipelines With Pandas DataFrame
+    <https://ramhiser.com/post/2018-04-16-building-scikit-learn-pipeline-with-pandas-dataframe/>`_,
+    April 16, 2018
 
     """
     def __init__(self, columns):
         self.columns = columns
 
     def fit(self, X, y=None):
+        """Fits columns selection to X.
+
+        Parameters
+        ----------
+        X: pd.DataFrame, shape = (n_samples, n_features)
+            Training data of independent variable values.
+
+        y: Ignore
+
+        Returns
+        -------
+        self: object
+            Returns the instance itself.
+
+        """
         return self
 
     def transform(self, X):
-        """
+        """Apply columns selection to X.
+
+        Parameters
+        ----------
+        X: pd.DataFrame, shape = (n_samples, n_features)
+            New data with n_samples as its number of samples.
+
+        Returns
+        -------
+        X_new: pd.DataFrame, shape = (n_samples, n_features)
+            X data limited to selected columns only.
 
         """
         assert isinstance(X, pd.DataFrame), \
-            'Input must be an instance of pandas.DataFrame()'
+            'Input must be an instance of pandas.DataFrame!'
 
         try:
-            return X[self.columns]
-        except KeyError:
+            X_new = X[self.columns]
+            return X_new
+        except KeyError as e:
             cols_error = list(set(self.columns) - set(X.columns))
-            raise KeyError("C'mon, those columns ain't in the DataFrame: %s"
-                           % cols_error)
+            raise KeyError(
+                "Selected columns not found in the DataFrame: %s" % cols_error
+            ).with_traceback(e.__traceback__)
 
 
 class TypeSelector(BaseEstimator, TransformerMixin):
-    """
-    Taken from:
-    https://ramhiser.com/post/2018-04-16-building-scikit-learn-pipeline-
-    with-pandas-dataframe/
+    """Limits the X to selected types.
+
+    Parameters
+    ----------
+    col_type: string or list-like
+        Names of types to be selected.
+
+    References
+    ----------
+    [1] J. Ramey, `Building Scikit-Learn Pipelines With Pandas DataFrame
+    <https://ramhiser.com/post/2018-04-16-building-scikit-learn-pipeline-with-pandas-dataframe/>`_,
+    April 16, 2018
 
     """
     def __init__(self, col_type):
         self.col_type = col_type
 
     def fit(self, X, y=None):
+        """Fits types selection to X.
+
+        Parameters
+        ----------
+        X: pd.DataFrame, shape = (n_samples, n_features)
+            Training data of independent variable values.
+
+        y: ignore
+
+        Returns
+        -------
+        self: object
+            Returns the instance itself.
+
+        """
         return self
 
     def transform(self, X):
-        """
+        """Apply types selection to X.
+
+        Parameters
+        ----------
+        X: pd.DataFrame, shape = (n_samples, n_features)
+            New data with n_samples as its number of samples.
+
+        Returns
+        -------
+        X_new: pd.DataFrame, shape = (n_samples, n_features)
+            X data limited to selected types only.
 
         """
         assert isinstance(X, pd.DataFrame), \
             'Input must be an instance of pandas.DataFrame()'
+        X_new = X.select_dtypes(include=[self.col_type])
 
-        return X.select_dtypes(include=[self.col_type])
+        return X_new
